@@ -12,13 +12,11 @@ const Login = () => {
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-
+  const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
-  const isFormValid =
-    email.trim() !== "" &&
-    password.trim() !== "";
+  const isFormValid = email.trim() !== "" && password.trim() !== "";
 
   const handleSubmit = async (event) => {
     event.preventDefault();
@@ -33,11 +31,7 @@ const Login = () => {
     try {
       setLoading(true);
 
-      await signInWithEmailAndPassword(
-        auth,
-        email,
-        password
-      );
+      await signInWithEmailAndPassword(auth, email, password);
 
       console.log("User has successfully logged in");
 
@@ -48,14 +42,12 @@ const Login = () => {
       switch (error.code) {
         case "auth/invalid-credential":
           setError(
-            "Invalid email or password. If you don't have an account, please sign up first."
+            "Invalid email or password. If you don't have an account, please sign up first.",
           );
           break;
 
         case "auth/user-not-found":
-          setError(
-            "No account found. Please sign up first."
-          );
+          setError("No account found. Please sign up first.");
           break;
 
         case "auth/wrong-password":
@@ -67,15 +59,11 @@ const Login = () => {
           break;
 
         case "auth/too-many-requests":
-          setError(
-            "Too many failed attempts. Please try again later."
-          );
+          setError("Too many failed attempts. Please try again later.");
           break;
 
         case "auth/network-request-failed":
-          setError(
-            "Network error. Please check your internet connection."
-          );
+          setError("Network error. Please check your internet connection.");
           break;
 
         default:
@@ -89,21 +77,14 @@ const Login = () => {
   return (
     <div className="login-page">
       <main className="login-container">
-
         <div className="login-card">
           <h2>Login</h2>
 
           {location.state?.message && (
-            <Alert variant="success">
-              {location.state.message}
-            </Alert>
+            <Alert variant="success">{location.state.message}</Alert>
           )}
 
-          {error && (
-            <Alert variant="danger">
-              {error}
-            </Alert>
-          )}
+          {error && <Alert variant="danger">{error}</Alert>}
 
           <Form onSubmit={handleSubmit}>
             <Form.Group className="login-form-group">
@@ -111,21 +92,30 @@ const Login = () => {
                 type="email"
                 placeholder="Email"
                 value={email}
-                onChange={(event) =>
-                  setEmail(event.target.value)
-                }
+                onChange={(event) => setEmail(event.target.value)}
               />
             </Form.Group>
 
             <Form.Group className="login-form-group">
-              <Form.Control
-                type="password"
-                placeholder="Password"
-                value={password}
-                onChange={(event) =>
-                  setPassword(event.target.value)
-                }
-              />
+              <div className="password-wrapper">
+                <Form.Control
+                  type={showPassword ? "text" : "password"}
+                  placeholder="Password"
+                  value={password}
+                  onChange={(event) => setPassword(event.target.value)}
+                />
+
+                <button
+                  type="button"
+                  className="password-toggle"
+                  onClick={() => setShowPassword(!showPassword)}
+                  aria-label={showPassword ? "Hide password" : "Show password"}
+                >
+                  <i
+                    className={`bi ${showPassword ? "bi-eye-slash" : "bi-eye"}`}
+                  ></i>
+                </button>
+              </div>
             </Form.Group>
 
             <Button
@@ -139,10 +129,8 @@ const Login = () => {
         </div>
 
         <div className="signup-box">
-          Don't have an account?{" "}
-          <Link to="/signup">Sign up first</Link>
+          Don't have an account? <Link to="/signup">Sign up first</Link>
         </div>
-
       </main>
     </div>
   );

@@ -106,3 +106,31 @@
 .signup-box a:hover {
   text-decoration: underline;
 }
+
+.password-wrapper {
+  position: relative;
+}
+
+.password-wrapper .form-control {
+  padding-right: 45px;
+}
+
+.password-toggle {
+  position: absolute;
+  top: 50%;
+  right: 12px;
+  transform: translateY(-50%);
+
+  border: none;
+  background: transparent;
+
+  color: #777;
+  cursor: pointer;
+
+  font-size: 18px;
+  padding: 0;
+}
+
+.password-toggle:hover {
+  color: #222;
+}
