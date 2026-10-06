@@ -12,6 +12,11 @@
     "test:ui": "vitest --ui"
   },
   "dependencies": {
+    "@tiptap/extension-color": "^3.31.4",
+    "@tiptap/extension-highlight": "^3.31.4",
+    "@tiptap/extension-text-style": "^3.31.4",
+    "@tiptap/react": "^3.31.4",
+    "@tiptap/starter-kit": "^3.31.4",
     "bootstrap": "^5.3.8",
     "bootstrap-icons": "^1.13.1",
     "firebase": "^12.19.0",

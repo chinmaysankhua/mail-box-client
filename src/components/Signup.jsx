@@ -1,10 +1,30 @@
 import { useState } from "react";
 import { Form, Button, Alert } from "react-bootstrap";
 import { Link, useNavigate } from "react-router-dom";
-import { createUserWithEmailAndPassword, signOut } from "firebase/auth";
+import {
+  createUserWithEmailAndPassword,
+  signOut,
+} from "firebase/auth";
 
 import { auth } from "../firebase/firebase";
 import "./Signup.css";
+
+const encodeEmail = (email) => {
+  const normalizedEmail = email.trim().toLowerCase();
+
+  const bytes = new TextEncoder().encode(normalizedEmail);
+
+  let binary = "";
+
+  bytes.forEach((byte) => {
+    binary += String.fromCharCode(byte);
+  });
+
+  return btoa(binary)
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=+$/, "");
+};
 
 const Signup = () => {
   const navigate = useNavigate();
@@ -17,12 +37,13 @@ const Signup = () => {
   const [loading, setLoading] = useState(false);
 
   const [showPassword, setShowPassword] = useState(false);
-  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] =
+    useState(false);
 
   const isFormValid =
     email.trim() !== "" &&
-    password.trim() !== "" &&
-    confirmPassword.trim() !== "" &&
+    password !== "" &&
+    confirmPassword !== "" &&
     password === confirmPassword;
 
   const handleSubmit = async (event) => {
@@ -30,7 +51,7 @@ const Signup = () => {
 
     setError("");
 
-    if (!email || !password || !confirmPassword) {
+    if (!email.trim() || !password || !confirmPassword) {
       setError("All fields are mandatory.");
       return;
     }
@@ -43,17 +64,53 @@ const Signup = () => {
     try {
       setLoading(true);
 
-      await createUserWithEmailAndPassword(auth, email, password);
+      // Create Firebase Authentication account
+      const userCredential =
+        await createUserWithEmailAndPassword(
+          auth,
+          email.trim(),
+          password
+        );
+
+      const user = userCredential.user;
+
+      // Get Firebase ID token
+      const idToken = await user.getIdToken();
+
+      // Create a Firebase-safe email key
+      const emailKey = encodeEmail(user.email);
+
+      // Save email -> UID mapping
+      const response = await fetch(
+        `${import.meta.env.VITE_FIREBASE_DATABASE_URL}/usersByEmail/${emailKey}.json?auth=${idToken}`,
+        {
+          method: "PUT",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            uid: user.uid,
+            email: user.email,
+          }),
+        }
+      );
+
+      if (!response.ok) {
+        throw new Error(
+          "Account created, but user information could not be saved."
+        );
+      }
 
       console.log("User has successfully signed up");
 
-      // Firebase automatically signs the user in after signup.
-      // We sign them out so they follow the normal signup -> login flow.
+      // Logout after signup
       await signOut(auth);
 
+      // Go to login page
       navigate("/login", {
         state: {
-          message: "Account created successfully. Please login.",
+          message:
+            "Account created successfully. Please login.",
         },
       });
     } catch (error) {
@@ -61,7 +118,9 @@ const Signup = () => {
 
       switch (error.code) {
         case "auth/email-already-in-use":
-          setError("An account with this email already exists.");
+          setError(
+            "An account with this email already exists."
+          );
           break;
 
         case "auth/invalid-email":
@@ -69,19 +128,28 @@ const Signup = () => {
           break;
 
         case "auth/weak-password":
-          setError("Password must be at least 6 characters.");
+          setError(
+            "Password must be at least 6 characters."
+          );
           break;
 
         case "auth/network-request-failed":
-          setError("Network error. Please check your internet connection.");
+          setError(
+            "Network error. Please check your internet connection."
+          );
           break;
 
         case "auth/operation-not-allowed":
-          setError("Email/password authentication is not enabled in Firebase.");
+          setError(
+            "Email/password authentication is not enabled in Firebase."
+          );
           break;
 
         default:
-          setError("Something went wrong. Please try again.");
+          setError(
+            error.message ||
+              "Something went wrong. Please try again."
+          );
       }
     } finally {
       setLoading(false);
@@ -94,84 +162,120 @@ const Signup = () => {
         <div className="signup-card">
           <h2>SignUp</h2>
 
-          {error && <Alert variant="danger">{error}</Alert>}
+          {error && (
+            <Alert variant="danger">
+              {error}
+            </Alert>
+          )}
 
           <Form onSubmit={handleSubmit}>
+            {/* Email */}
             <Form.Group className="signup-form-group">
               <Form.Control
                 type="email"
                 placeholder="Email"
                 value={email}
-                onChange={(event) => setEmail(event.target.value)}
+                onChange={(event) =>
+                  setEmail(event.target.value)
+                }
               />
             </Form.Group>
 
+            {/* Password */}
             <Form.Group className="signup-form-group">
               <div className="password-wrapper">
                 <Form.Control
-                  type={showPassword ? "text" : "password"}
+                  type={
+                    showPassword
+                      ? "text"
+                      : "password"
+                  }
                   placeholder="Password"
                   value={password}
-                  onChange={(event) => setPassword(event.target.value)}
+                  onChange={(event) =>
+                    setPassword(event.target.value)
+                  }
                 />
 
                 <button
                   type="button"
                   className="password-toggle"
-                  onClick={() => setShowPassword(!showPassword)}
-                  aria-label={showPassword ? "Hide password" : "Show password"}
+                  onClick={() =>
+                    setShowPassword(!showPassword)
+                  }
                 >
                   <i
-                    className={`bi ${showPassword ? "bi-eye-slash" : "bi-eye"}`}
+                    className={`bi ${
+                      showPassword
+                        ? "bi-eye-slash"
+                        : "bi-eye"
+                    }`}
                   ></i>
                 </button>
               </div>
             </Form.Group>
 
+            {/* Confirm Password */}
             <Form.Group className="signup-form-group">
               <div className="password-wrapper">
                 <Form.Control
-                  type={showConfirmPassword ? "text" : "password"}
+                  type={
+                    showConfirmPassword
+                      ? "text"
+                      : "password"
+                  }
                   placeholder="Confirm Password"
                   value={confirmPassword}
-                  onChange={(event) => setConfirmPassword(event.target.value)}
+                  onChange={(event) =>
+                    setConfirmPassword(
+                      event.target.value
+                    )
+                  }
                 />
 
                 <button
                   type="button"
                   className="password-toggle"
-                  onClick={() => setShowConfirmPassword(!showConfirmPassword)}
-                  aria-label={
-                    showConfirmPassword
-                      ? "Hide confirm password"
-                      : "Show confirm password"
+                  onClick={() =>
+                    setShowConfirmPassword(
+                      !showConfirmPassword
+                    )
                   }
                 >
                   <i
                     className={`bi ${
-                      showConfirmPassword ? "bi-eye-slash" : "bi-eye"
+                      showConfirmPassword
+                        ? "bi-eye-slash"
+                        : "bi-eye"
                     }`}
                   ></i>
                 </button>
               </div>
 
-              {confirmPassword && password !== confirmPassword && (
-                <div className="password-error">Passwords do not match.</div>
-              )}
+              {confirmPassword &&
+                password !== confirmPassword && (
+                  <div className="password-error">
+                    Passwords do not match.
+                  </div>
+                )}
             </Form.Group>
 
+            {/* Submit */}
             <Button
               type="submit"
               className="signup-button"
               disabled={!isFormValid || loading}
             >
-              {loading ? "Creating account..." : "Sign up"}
+              {loading
+                ? "Creating account..."
+                : "Sign up"}
             </Button>
           </Form>
         </div>
 
         <div className="login-box">
-          Have an account? <Link to="/login">Login</Link>
+          Have an account?{" "}
+          <Link to="/login">Login</Link>
         </div>
       </main>
     </div>
