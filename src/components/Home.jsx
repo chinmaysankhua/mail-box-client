@@ -24,25 +24,28 @@ const emailReducer = (state, action) => {
         ...state,
         emails: action.payload,
         loading: false,
+        error: "",
+      };
+
+    case "SET_LOADING":
+      return {
+        ...state,
+        loading: true,
+        error: "",
       };
 
     case "SET_ERROR":
       return {
         ...state,
-        error: action.payload,
         loading: false,
+        error: action.payload,
       };
 
     case "MARK_AS_READ":
       return {
         ...state,
         emails: state.emails.map((email) =>
-          email.id === action.payload
-            ? {
-                ...email,
-                read: true,
-              }
-            : email,
+          email.id === action.payload ? { ...email, read: true } : email,
         ),
       };
 
@@ -62,15 +65,20 @@ const Home = () => {
 
   const [state, dispatch] = useReducer(emailReducer, initialState);
 
+  const [folder, setFolder] = useState("inbox");
   const [selectedEmail, setSelectedEmail] = useState(null);
 
   // -------------------------
-  // Fetch Inbox
+  // Fetch emails
   // -------------------------
 
   useEffect(() => {
     const fetchEmails = async () => {
       try {
+        dispatch({
+          type: "SET_LOADING",
+        });
+
         const currentUser = auth.currentUser;
 
         if (!currentUser) {
@@ -81,11 +89,11 @@ const Home = () => {
         const idToken = await getIdToken(currentUser);
 
         const response = await fetch(
-          `${DATABASE_URL}/mailboxes/${currentUser.uid}/inbox.json?auth=${idToken}`,
+          `${DATABASE_URL}/mailboxes/${currentUser.uid}/${folder}.json?auth=${idToken}`,
         );
 
         if (!response.ok) {
-          throw new Error("Failed to fetch emails.");
+          throw new Error(`Failed to fetch ${folder} emails.`);
         }
 
         const data = await response.json();
@@ -105,14 +113,14 @@ const Home = () => {
         }));
 
         // Newest email first
-        emailList.sort((a, b) => b.createdAt - a.createdAt);
+        emailList.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
 
         dispatch({
           type: "SET_EMAILS",
           payload: emailList,
         });
       } catch (error) {
-        console.error("Fetch inbox error:", error);
+        console.error("Fetch emails error:", error);
 
         dispatch({
           type: "SET_ERROR",
@@ -121,69 +129,35 @@ const Home = () => {
       }
     };
 
+    setSelectedEmail(null);
     fetchEmails();
-  }, [navigate]);
+  }, [folder, navigate]);
 
   // -------------------------
-  // Mark email as read
+  // Open email
   // -------------------------
 
-  const handleDeleteEmail = async (email) => {
-    try {
-      const currentUser = auth.currentUser;
+  const handleOpenEmail = async (email) => {
+    const currentUser = auth.currentUser;
 
-      if (!currentUser) {
-        navigate("/login");
-        return;
-      }
-
-      const idToken = await getIdToken(currentUser);
-
-      const response = await fetch(
-        `${DATABASE_URL}/mailboxes/${currentUser.uid}/inbox/${email.id}.json?auth=${idToken}`,
-        {
-          method: "DELETE",
-        },
-      );
-
-      if (!response.ok) {
-        throw new Error("Failed to delete email.");
-      }
-
-      dispatch({
-        type: "DELETE_EMAIL",
-        payload: email.id,
-      });
-
-      // If the deleted mail was currently open
-      if (selectedEmail && selectedEmail.id === email.id) {
-        setSelectedEmail(null);
-      }
-    } catch (error) {
-      console.error("Delete email error:", error);
-
-      dispatch({
-        type: "SET_ERROR",
-        payload: error.message || "Unable to delete email.",
-      });
+    if (!currentUser) {
+      navigate("/login");
+      return;
     }
-  };
 
-  const markEmailAsRead = async (email) => {
+    // Sent emails don't need to be marked as read.
+    if (folder === "sent") {
+      setSelectedEmail(email);
+      return;
+    }
+
+    // Already read
+    if (email.read) {
+      setSelectedEmail(email);
+      return;
+    }
+
     try {
-      const currentUser = auth.currentUser;
-
-      if (!currentUser) {
-        navigate("/login");
-        return;
-      }
-
-      // Already read
-      if (email.read) {
-        setSelectedEmail(email);
-        return;
-      }
-
       const idToken = await getIdToken(currentUser);
 
       const response = await fetch(
@@ -201,13 +175,11 @@ const Home = () => {
         throw new Error("Failed to mark email as read.");
       }
 
-      // Update reducer
       dispatch({
         type: "MARK_AS_READ",
         payload: email.id,
       });
 
-      // Update selected email
       setSelectedEmail({
         ...email,
         read: true,
@@ -217,7 +189,51 @@ const Home = () => {
 
       dispatch({
         type: "SET_ERROR",
-        payload: error.message || "Unable to mark email as read.",
+        payload: error.message || "Unable to open email.",
+      });
+    }
+  };
+
+  // -------------------------
+  // Delete email
+  // -------------------------
+
+  const handleDeleteEmail = async (email) => {
+    try {
+      const currentUser = auth.currentUser;
+
+      if (!currentUser) {
+        navigate("/login");
+        return;
+      }
+
+      const idToken = await getIdToken(currentUser);
+
+      const response = await fetch(
+        `${DATABASE_URL}/mailboxes/${currentUser.uid}/${folder}/${email.id}.json?auth=${idToken}`,
+        {
+          method: "DELETE",
+        },
+      );
+
+      if (!response.ok) {
+        throw new Error("Failed to delete email.");
+      }
+
+      dispatch({
+        type: "DELETE_EMAIL",
+        payload: email.id,
+      });
+
+      if (selectedEmail && selectedEmail.id === email.id) {
+        setSelectedEmail(null);
+      }
+    } catch (error) {
+      console.error("Delete email error:", error);
+
+      dispatch({
+        type: "SET_ERROR",
+        payload: error.message || "Unable to delete email.",
       });
     }
   };
@@ -227,17 +243,12 @@ const Home = () => {
   // -------------------------
 
   const formatTime = (timestamp) => {
-    if (!timestamp) {
-      return "";
-    }
+    if (!timestamp) return "";
 
     const date = new Date(timestamp);
-
     const today = new Date();
 
-    const isToday = date.toDateString() === today.toDateString();
-
-    if (isToday) {
+    if (date.toDateString() === today.toDateString()) {
       return date.toLocaleTimeString([], {
         hour: "2-digit",
         minute: "2-digit",
@@ -251,21 +262,19 @@ const Home = () => {
   };
 
   const getPreview = (html) => {
-    if (!html) {
-      return "";
-    }
+    if (!html) return "";
 
-    const tempDiv = document.createElement("div");
+    const div = document.createElement("div");
+    div.innerHTML = html;
 
-    tempDiv.innerHTML = html;
-
-    return tempDiv.textContent || tempDiv.innerText || "";
+    return div.textContent || div.innerText || "";
   };
 
-  const unreadCount = state.emails.filter((email) => !email.read).length;
+  const unreadCount =
+    folder === "inbox" ? state.emails.filter((email) => !email.read).length : 0;
 
   // -------------------------
-  // Email detail screen
+  // Read email
   // -------------------------
 
   if (selectedEmail) {
@@ -283,15 +292,29 @@ const Home = () => {
 
           <button
             type="button"
-            className="sidebar-item active"
-            onClick={() => setSelectedEmail(null)}
+            className={
+              folder === "inbox" ? "sidebar-item active" : "sidebar-item"
+            }
+            onClick={() => {
+              setFolder("inbox");
+              setSelectedEmail(null);
+            }}
           >
             <i className="bi bi-inbox"></i>
             Inbox
             {unreadCount > 0 && <span>{unreadCount}</span>}
           </button>
 
-          <button type="button" className="sidebar-item">
+          <button
+            type="button"
+            className={
+              folder === "sent" ? "sidebar-item active" : "sidebar-item"
+            }
+            onClick={() => {
+              setFolder("sent");
+              setSelectedEmail(null);
+            }}
+          >
             <i className="bi bi-send"></i>
             Sent
           </button>
@@ -303,15 +326,29 @@ const Home = () => {
               <button type="button" onClick={() => setSelectedEmail(null)}>
                 <i className="bi bi-arrow-left"></i>
               </button>
+
+              <button
+                type="button"
+                className="detail-delete-button"
+                onClick={() => handleDeleteEmail(selectedEmail)}
+              >
+                <i className="bi bi-trash"></i>
+              </button>
             </div>
 
             <div className="email-detail-content">
-              <h2>{selectedEmail.subject}</h2>
+              <h2>{selectedEmail.subject || "(No Subject)"}</h2>
 
               <div className="email-sender-detail">
-                <strong>{selectedEmail.sender}</strong>
+                <strong>
+                  {folder === "sent"
+                    ? `To: ${selectedEmail.receiver}`
+                    : selectedEmail.sender}
+                </strong>
 
-                <span>To: {selectedEmail.receiver}</span>
+                {folder === "inbox" && (
+                  <span>To: {selectedEmail.receiver}</span>
+                )}
 
                 <span>
                   {new Date(selectedEmail.createdAt).toLocaleString()}
@@ -332,13 +369,11 @@ const Home = () => {
   }
 
   // -------------------------
-  // Inbox screen
+  // Inbox / Sent list
   // -------------------------
 
   return (
     <div className="mail-page">
-      {/* Sidebar */}
-
       <aside className="mail-sidebar">
         <button
           type="button"
@@ -349,44 +384,74 @@ const Home = () => {
           Compose
         </button>
 
-        <button type="button" className="sidebar-item active">
+        <button
+          type="button"
+          className={
+            folder === "inbox" ? "sidebar-item active" : "sidebar-item"
+          }
+          onClick={() => setFolder("inbox")}
+        >
           <i className="bi bi-inbox"></i>
           Inbox
           {unreadCount > 0 && <span>{unreadCount}</span>}
         </button>
 
-        <button type="button" className="sidebar-item">
+        <button
+          type="button"
+          className={folder === "sent" ? "sidebar-item active" : "sidebar-item"}
+          onClick={() => setFolder("sent")}
+        >
           <i className="bi bi-send"></i>
           Sent
         </button>
       </aside>
-
-      {/* Main */}
 
       <main className="mail-main">
         <div className="mail-toolbar">
           <div className="toolbar-left">
             <input type="checkbox" className="select-all" />
 
-            <button type="button">
+            <button
+              type="button"
+              onClick={() => {
+                setFolder(folder);
+              }}
+            >
               <i className="bi bi-arrow-clockwise"></i>
             </button>
           </div>
 
-          <div className="unread-count">{unreadCount} unread</div>
+          <div className="unread-count">
+            {folder === "inbox"
+              ? `${unreadCount} unread`
+              : `${state.emails.length} sent`}
+          </div>
         </div>
 
         {state.error && <div className="mail-error">{state.error}</div>}
 
-        {state.loading && <div className="mail-empty">Loading emails...</div>}
+        {state.loading && (
+          <div className="mail-empty">
+            Loading {folder === "inbox" ? "inbox" : "sent mails"}
+            ...
+          </div>
+        )}
 
         {!state.loading && state.emails.length === 0 && (
           <div className="mail-empty">
-            <i className="bi bi-inbox"></i>
+            <i
+              className={folder === "inbox" ? "bi bi-inbox" : "bi bi-send"}
+            ></i>
 
-            <h3>Your inbox is empty</h3>
+            <h3>
+              {folder === "inbox" ? "Your inbox is empty" : "No sent emails"}
+            </h3>
 
-            <p>Emails sent to you will appear here.</p>
+            <p>
+              {folder === "inbox"
+                ? "Emails sent to you will appear here."
+                : "Emails you send will appear here."}
+            </p>
           </div>
         )}
 
@@ -395,23 +460,23 @@ const Home = () => {
             {state.emails.map((email) => (
               <div
                 key={email.id}
-                className={email.read ? "email-row" : "email-row unread"}
-                onClick={() => markEmailAsRead(email)}
+                className={
+                  folder === "inbox" && !email.read
+                    ? "email-row unread"
+                    : "email-row"
+                }
+                onClick={() => handleOpenEmail(email)}
               >
-                {/* Checkbox */}
-
                 <input
                   type="checkbox"
                   onClick={(event) => event.stopPropagation()}
                 />
 
-                {/* Unread dot */}
-
-                <span
-                  className={email.read ? "unread-dot hidden" : "unread-dot"}
-                ></span>
-
-                {/* Star */}
+                {folder === "inbox" && (
+                  <span
+                    className={email.read ? "unread-dot hidden" : "unread-dot"}
+                  ></span>
+                )}
 
                 <button
                   type="button"
@@ -421,14 +486,14 @@ const Home = () => {
                   <i className="bi bi-star"></i>
                 </button>
 
-                {/* Sender */}
-
-                <div className="email-sender">{email.sender}</div>
-
-                {/* Subject */}
+                <div className="email-sender">
+                  {folder === "sent" ? email.receiver : email.sender}
+                </div>
 
                 <div className="email-content">
-                  <span className="email-subject">{email.subject}</span>
+                  <span className="email-subject">
+                    {email.subject || "(No Subject)"}
+                  </span>
 
                   <span className="email-preview">
                     {" "}
@@ -436,9 +501,8 @@ const Home = () => {
                   </span>
                 </div>
 
-                {/* Time */}
-
                 <div className="email-time">{formatTime(email.createdAt)}</div>
+
                 <button
                   type="button"
                   className="delete-mail-button"
