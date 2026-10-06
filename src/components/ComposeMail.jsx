@@ -3,14 +3,12 @@ import { EditorContent, useEditor } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import { TextStyleKit } from "@tiptap/extension-text-style";
 import Highlight from "@tiptap/extension-highlight";
-
+import useMailbox from "../hooks/useMailbox";
 import { useNavigate } from "react-router-dom";
-import { getIdToken } from "firebase/auth";
 
-import { auth } from "../firebase/firebase";
+
 import "./ComposeMail.css";
 
-const DATABASE_URL = import.meta.env.VITE_FIREBASE_DATABASE_URL;
 
 /*
  * Firebase Realtime Database does not allow:
@@ -19,26 +17,11 @@ const DATABASE_URL = import.meta.env.VITE_FIREBASE_DATABASE_URL;
  * encodeURIComponent() does not encode ".".
  * So we encode "." separately as "%2E".
  */
-const encodeEmail = (email) => {
-  const normalizedEmail = email.trim().toLowerCase();
 
-  const bytes = new TextEncoder().encode(normalizedEmail);
-
-  let binary = "";
-
-  bytes.forEach((byte) => {
-    binary += String.fromCharCode(byte);
-  });
-
-  return btoa(binary)
-    .replace(/\+/g, "-")
-    .replace(/\//g, "_")
-    .replace(/=+$/, "");
-};
 
 const ComposeMail = () => {
   const navigate = useNavigate();
-
+  const { sendEmail } = useMailbox("sent");
   const [to, setTo] = useState("");
   const [subject, setSubject] = useState("");
 
@@ -90,13 +73,6 @@ const ComposeMail = () => {
     setError("");
     setMessage("");
 
-    const currentUser = auth.currentUser;
-
-    if (!currentUser) {
-      setError("Please login first.");
-      return;
-    }
-
     if (!to.trim()) {
       setError("Please enter the receiver email.");
       return;
@@ -112,9 +88,6 @@ const ComposeMail = () => {
       return;
     }
 
-    /*
-     * Check whether the editor actually contains text.
-     */
     const textContent = editor.getText().trim();
 
     if (!textContent) {
@@ -125,187 +98,22 @@ const ComposeMail = () => {
     try {
       setLoading(true);
 
-      /*
-       * Get Firebase Authentication ID token.
-       */
-      const idToken = await getIdToken(
-        currentUser,
-        true
-      );
+      await sendEmail({
+        receiverEmail: to,
+        subject,
+        body: editor.getHTML(),
+      });
 
-      /*
-       * Receiver email entered by user.
-       */
-      const receiverEmail = to
-        .trim()
-        .toLowerCase();
+      setMessage("Mail sent successfully!");
 
-      /*
-       * Find receiver UID using email.
-       *
-       * usersByEmail/
-       *    encoded-email/
-       *       uid
-       *       email
-       */
-      console.log("DATABASE_URL:", DATABASE_URL);
-console.log("Receiver email:", receiverEmail);
-console.log(
-  "Encoded email:",
-  encodeEmail(receiverEmail)
-);
-console.log(
-  "Receiver lookup URL:",
-  `${DATABASE_URL}/usersByEmail/${encodeEmail(
-    receiverEmail
-  )}.json`
-);
-      const receiverResponse = await fetch(
-        `${DATABASE_URL}/usersByEmail/${encodeEmail(
-          receiverEmail
-        )}.json?auth=${idToken}`
-      );
-
-      if (!receiverResponse.ok) {
-        throw new Error(
-          "Unable to find receiver."
-        );
-      }
-
-      const receiver =
-        await receiverResponse.json();
-
-      if (!receiver) {
-        setError(
-          "No account exists with this email."
-        );
-        return;
-      }
-
-      /*
-       * Tiptap gives us HTML directly.
-       *
-       * Example:
-       *
-       * <p>Hello <strong>Chinmay</strong></p>
-       *
-       * <p>
-       *   <mark style="background-color: yellow">
-       *      Important
-       *   </mark>
-       * </p>
-       */
-      const htmlBody = editor.getHTML();
-
-      /*
-       * Mail object stored in Firebase.
-       */
-      const mail = {
-        sender: currentUser.email,
-        senderUid: currentUser.uid,
-
-        receiver: receiverEmail,
-        receiverUid: receiver.uid,
-
-        subject: subject.trim(),
-
-        body: htmlBody,
-
-        createdAt: Date.now(),
-
-        read: false,
-      };
-
-      /*
-       * ------------------------------------------------
-       * STEP 1
-       * Store mail in receiver's inbox.
-       *
-       * POST automatically generates a Firebase key.
-       * ------------------------------------------------
-       */
-      const inboxResponse = await fetch(
-        `${DATABASE_URL}/mailboxes/${receiver.uid}/inbox.json?auth=${idToken}`,
-        {
-          method: "POST",
-
-          headers: {
-            "Content-Type": "application/json",
-          },
-
-          body: JSON.stringify(mail),
-        }
-      );
-
-      if (!inboxResponse.ok) {
-        throw new Error(
-          "Failed to send mail."
-        );
-      }
-
-      const inboxResult =
-        await inboxResponse.json();
-
-      /*
-       * Firebase returns:
-       *
-       * {
-       *   "name": "-OABC123..."
-       * }
-       *
-       * We reuse this same ID for Sent.
-       */
-      const mailId = inboxResult.name;
-
-      /*
-       * ------------------------------------------------
-       * STEP 2
-       * Store the same mail in sender's sentbox.
-       * ------------------------------------------------
-       */
-      const sentResponse = await fetch(
-        `${DATABASE_URL}/mailboxes/${currentUser.uid}/sent/${mailId}.json?auth=${idToken}`,
-        {
-          method: "PUT",
-
-          headers: {
-            "Content-Type": "application/json",
-          },
-
-          body: JSON.stringify(mail),
-        }
-      );
-
-      if (!sentResponse.ok) {
-        throw new Error(
-          "Mail delivered, but failed to save it in sentbox."
-        );
-      }
-
-      /*
-       * Success
-       */
-      setMessage(
-        "Mail sent successfully!"
-      );
-
-      /*
-       * Clear form.
-       */
       setTo("");
       setSubject("");
 
       editor.commands.clearContent();
     } catch (error) {
-      console.error(
-        "Send mail error:",
-        error
-      );
+      console.error("Send mail error:", error);
 
-      setError(
-        error.message ||
-          "Something went wrong while sending the mail."
-      );
+      setError(error.message || "Something went wrong while sending the mail.");
     } finally {
       setLoading(false);
     }
@@ -317,11 +125,7 @@ console.log(
   const setTextColor = (color) => {
     if (!editor) return;
 
-    editor
-      .chain()
-      .focus()
-      .setColor(color)
-      .run();
+    editor.chain().focus().setColor(color).run();
   };
 
   /*
@@ -345,24 +149,16 @@ console.log(
   const addLink = () => {
     if (!editor) return;
 
-    const previousUrl =
-      editor.getAttributes("link").href;
+    const previousUrl = editor.getAttributes("link").href;
 
-    const url = window.prompt(
-      "Enter URL",
-      previousUrl || "https://"
-    );
+    const url = window.prompt("Enter URL", previousUrl || "https://");
 
     if (url === null) {
       return;
     }
 
     if (url.trim() === "") {
-      editor
-        .chain()
-        .focus()
-        .unsetLink()
-        .run();
+      editor.chain().focus().unsetLink().run();
 
       return;
     }
@@ -382,9 +178,7 @@ console.log(
   if (!editor) {
     return (
       <div className="compose-page">
-        <div className="compose-container">
-          Loading editor...
-        </div>
+        <div className="compose-container">Loading editor...</div>
       </div>
     );
   }
@@ -392,7 +186,6 @@ console.log(
   return (
     <div className="compose-page">
       <div className="compose-container">
-
         {/* Header */}
         <div className="compose-header">
           <h2>New Message</h2>
@@ -407,18 +200,10 @@ console.log(
         </div>
 
         {/* Error */}
-        {error && (
-          <div className="compose-error">
-            {error}
-          </div>
-        )}
+        {error && <div className="compose-error">{error}</div>}
 
         {/* Success */}
-        {message && (
-          <div className="compose-success">
-            {message}
-          </div>
-        )}
+        {message && <div className="compose-success">{message}</div>}
 
         {/* To */}
         <div className="compose-field">
@@ -426,9 +211,7 @@ console.log(
             type="email"
             placeholder="To"
             value={to}
-            onChange={(event) =>
-              setTo(event.target.value)
-            }
+            onChange={(event) => setTo(event.target.value)}
           />
         </div>
 
@@ -438,15 +221,12 @@ console.log(
             type="text"
             placeholder="Subject"
             value={subject}
-            onChange={(event) =>
-              setSubject(event.target.value)
-            }
+            onChange={(event) => setSubject(event.target.value)}
           />
         </div>
 
         {/* Toolbar */}
         <div className="editor-toolbar">
-
           {/* Bold */}
           <button
             type="button"
@@ -456,13 +236,7 @@ console.log(
                 ? "toolbar-button active"
                 : "toolbar-button"
             }
-            onClick={() =>
-              editor
-                .chain()
-                .focus()
-                .toggleBold()
-                .run()
-            }
+            onClick={() => editor.chain().focus().toggleBold().run()}
           >
             <strong>B</strong>
           </button>
@@ -476,13 +250,7 @@ console.log(
                 ? "toolbar-button active"
                 : "toolbar-button"
             }
-            onClick={() =>
-              editor
-                .chain()
-                .focus()
-                .toggleItalic()
-                .run()
-            }
+            onClick={() => editor.chain().focus().toggleItalic().run()}
           >
             <em>I</em>
           </button>
@@ -496,13 +264,7 @@ console.log(
                 ? "toolbar-button active"
                 : "toolbar-button"
             }
-            onClick={() =>
-              editor
-                .chain()
-                .focus()
-                .toggleUnderline()
-                .run()
-            }
+            onClick={() => editor.chain().focus().toggleUnderline().run()}
           >
             <u>U</u>
           </button>
@@ -516,13 +278,7 @@ console.log(
                 ? "toolbar-button active"
                 : "toolbar-button"
             }
-            onClick={() =>
-              editor
-                .chain()
-                .focus()
-                .toggleStrike()
-                .run()
-            }
+            onClick={() => editor.chain().focus().toggleStrike().run()}
           >
             <s>S</s>
           </button>
@@ -534,13 +290,7 @@ console.log(
             type="button"
             title="Bullet List"
             className="toolbar-button"
-            onClick={() =>
-              editor
-                .chain()
-                .focus()
-                .toggleBulletList()
-                .run()
-            }
+            onClick={() => editor.chain().focus().toggleBulletList().run()}
           >
             ☷
           </button>
@@ -550,13 +300,7 @@ console.log(
             type="button"
             title="Numbered List"
             className="toolbar-button"
-            onClick={() =>
-              editor
-                .chain()
-                .focus()
-                .toggleOrderedList()
-                .run()
-            }
+            onClick={() => editor.chain().focus().toggleOrderedList().run()}
           >
             ≡
           </button>
@@ -574,15 +318,12 @@ console.log(
             </button>
 
             <div className="color-menu">
-
               <button
                 type="button"
                 style={{
                   color: "#000000",
                 }}
-                onClick={() =>
-                  setTextColor("#000000")
-                }
+                onClick={() => setTextColor("#000000")}
               >
                 Black
               </button>
@@ -592,9 +333,7 @@ console.log(
                 style={{
                   color: "#dc3545",
                 }}
-                onClick={() =>
-                  setTextColor("#dc3545")
-                }
+                onClick={() => setTextColor("#dc3545")}
               >
                 Red
               </button>
@@ -604,9 +343,7 @@ console.log(
                 style={{
                   color: "#0d6efd",
                 }}
-                onClick={() =>
-                  setTextColor("#0d6efd")
-                }
+                onClick={() => setTextColor("#0d6efd")}
               >
                 Blue
               </button>
@@ -616,9 +353,7 @@ console.log(
                 style={{
                   color: "#198754",
                 }}
-                onClick={() =>
-                  setTextColor("#198754")
-                }
+                onClick={() => setTextColor("#198754")}
               >
                 Green
               </button>
@@ -628,13 +363,10 @@ console.log(
                 style={{
                   color: "#6f42c1",
                 }}
-                onClick={() =>
-                  setTextColor("#6f42c1")
-                }
+                onClick={() => setTextColor("#6f42c1")}
               >
                 Purple
               </button>
-
             </div>
           </div>
 
@@ -649,13 +381,7 @@ console.log(
             </button>
 
             <div className="color-menu">
-
-              <button
-                type="button"
-                onClick={() =>
-                  setHighlight("#fff59d")
-                }
-              >
+              <button type="button" onClick={() => setHighlight("#fff59d")}>
                 <span
                   className="color-box"
                   style={{
@@ -665,12 +391,7 @@ console.log(
                 Yellow
               </button>
 
-              <button
-                type="button"
-                onClick={() =>
-                  setHighlight("#ffccbc")
-                }
-              >
+              <button type="button" onClick={() => setHighlight("#ffccbc")}>
                 <span
                   className="color-box"
                   style={{
@@ -680,12 +401,7 @@ console.log(
                 Orange
               </button>
 
-              <button
-                type="button"
-                onClick={() =>
-                  setHighlight("#c8e6c9")
-                }
-              >
+              <button type="button" onClick={() => setHighlight("#c8e6c9")}>
                 <span
                   className="color-box"
                   style={{
@@ -695,12 +411,7 @@ console.log(
                 Green
               </button>
 
-              <button
-                type="button"
-                onClick={() =>
-                  setHighlight("#bbdefb")
-                }
-              >
+              <button type="button" onClick={() => setHighlight("#bbdefb")}>
                 <span
                   className="color-box"
                   style={{
@@ -710,12 +421,7 @@ console.log(
                 Blue
               </button>
 
-              <button
-                type="button"
-                onClick={() =>
-                  setHighlight("#e1bee7")
-                }
-              >
+              <button type="button" onClick={() => setHighlight("#e1bee7")}>
                 <span
                   className="color-box"
                   style={{
@@ -724,7 +430,6 @@ console.log(
                 ></span>
                 Purple
               </button>
-
             </div>
           </div>
 
@@ -748,12 +453,7 @@ console.log(
             title="Remove Formatting"
             className="toolbar-button"
             onClick={() =>
-              editor
-                .chain()
-                .focus()
-                .unsetAllMarks()
-                .clearNodes()
-                .run()
+              editor.chain().focus().unsetAllMarks().clearNodes().run()
             }
           >
             Tx
@@ -766,13 +466,7 @@ console.log(
             type="button"
             title="Undo"
             className="toolbar-button"
-            onClick={() =>
-              editor
-                .chain()
-                .focus()
-                .undo()
-                .run()
-            }
+            onClick={() => editor.chain().focus().undo().run()}
           >
             ↶
           </button>
@@ -782,13 +476,7 @@ console.log(
             type="button"
             title="Redo"
             className="toolbar-button"
-            onClick={() =>
-              editor
-                .chain()
-                .focus()
-                .redo()
-                .run()
-            }
+            onClick={() => editor.chain().focus().redo().run()}
           >
             ↷
           </button>
@@ -801,16 +489,13 @@ console.log(
 
         {/* Footer */}
         <div className="compose-footer">
-
           <button
             type="button"
             className="send-button"
             onClick={handleSend}
             disabled={loading}
           >
-            {loading
-              ? "Sending..."
-              : "Send"}
+            {loading ? "Sending..." : "Send"}
           </button>
 
           <button
@@ -828,9 +513,7 @@ console.log(
           >
             🗑
           </button>
-
         </div>
-
       </div>
     </div>
   );

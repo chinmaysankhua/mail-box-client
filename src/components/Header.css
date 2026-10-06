@@ -52,3 +52,157 @@
 .logout-button:hover {
   color: #149de3;
 }
+
+.profile-button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border: none;
+  background: transparent;
+  color: #333;
+  cursor: pointer;
+  font-size: 14px;
+  padding: 8px 10px;
+  border-radius: 5px;
+}
+
+.profile-button:hover {
+  background: #f1f1f1;
+}
+
+.profile-button i {
+  font-size: 20px;
+}
+
+.profile-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 2000;
+
+  display: flex;
+  align-items: flex-start;
+  justify-content: flex-end;
+
+  padding: 75px 30px 30px;
+
+  background: rgba(0, 0, 0, 0.15);
+}
+
+.profile-card {
+  width: 350px;
+  background: #ffffff;
+  border-radius: 10px;
+
+  box-shadow:
+    0 5px 25px rgba(0, 0, 0, 0.2);
+
+  overflow: hidden;
+}
+
+.profile-header {
+  height: 60px;
+
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+
+  padding: 0 20px;
+
+  border-bottom: 1px solid #eeeeee;
+}
+
+.profile-header h2 {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 500;
+}
+
+.profile-close {
+  border: none;
+  background: transparent;
+
+  font-size: 28px;
+  color: #777;
+
+  cursor: pointer;
+}
+
+.profile-close:hover {
+  color: #222;
+}
+
+.profile-avatar {
+  width: 75px;
+  height: 75px;
+
+  margin: 25px auto 15px;
+
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  border-radius: 50%;
+
+  background: #e8f0fe;
+  color: #1a73e8;
+
+  font-size: 35px;
+}
+
+.profile-info {
+  padding: 0 25px 25px;
+  text-align: center;
+}
+
+.profile-info h3 {
+  margin: 10px 0 25px;
+
+  font-size: 16px;
+  font-weight: 500;
+
+  word-break: break-word;
+}
+
+.profile-field {
+  display: flex;
+  flex-direction: column;
+
+  gap: 5px;
+
+  padding: 12px 0;
+
+  border-top: 1px solid #eeeeee;
+
+  text-align: left;
+}
+
+.profile-field span {
+  color: #777;
+  font-size: 13px;
+}
+
+.profile-field strong {
+  color: #222;
+  font-size: 14px;
+  font-weight: 500;
+  word-break: break-word;
+}
+
+.profile-close-button {
+  width: calc(100% - 40px);
+  height: 40px;
+
+  margin: 0 20px 20px;
+
+  border: none;
+  border-radius: 5px;
+
+  background: #1a73e8;
+  color: white;
+
+  cursor: pointer;
+}
+
+.profile-close-button:hover {
+  background: #1765c1;
+}
