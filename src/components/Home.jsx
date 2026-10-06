@@ -1,4 +1,4 @@
-import { useEffect, useReducer, useState } from "react";
+import { useEffect, useReducer, useState, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { getIdToken } from "firebase/auth";
 
@@ -59,7 +59,21 @@ const emailReducer = (state, action) => {
       return state;
   }
 };
+const areEmailsEqual = (oldEmails, newEmails) => {
+  if (oldEmails.length !== newEmails.length) {
+    return false;
+  }
 
+  return oldEmails.every((oldEmail, index) => {
+    const newEmail = newEmails[index];
+
+    return (
+      oldEmail.id === newEmail.id &&
+      oldEmail.read === newEmail.read &&
+      oldEmail.createdAt === newEmail.createdAt
+    );
+  });
+};
 const Home = () => {
   const navigate = useNavigate();
 
@@ -67,23 +81,28 @@ const Home = () => {
 
   const [folder, setFolder] = useState("inbox");
   const [selectedEmail, setSelectedEmail] = useState(null);
-
+  const emailsRef = useRef([]);
   // -------------------------
   // Fetch emails
   // -------------------------
 
   useEffect(() => {
-    const fetchEmails = async () => {
-      try {
-        dispatch({
-          type: "SET_LOADING",
-        });
+    let intervalId;
+    let cancelled = false;
 
+    const fetchEmails = async (showLoading = false) => {
+      try {
         const currentUser = auth.currentUser;
 
         if (!currentUser) {
           navigate("/login");
           return;
+        }
+
+        if (showLoading) {
+          dispatch({
+            type: "SET_LOADING",
+          });
         }
 
         const idToken = await getIdToken(currentUser);
@@ -98,28 +117,45 @@ const Home = () => {
 
         const data = await response.json();
 
-        if (!data) {
-          dispatch({
-            type: "SET_EMAILS",
-            payload: [],
-          });
-
+        if (cancelled) {
           return;
         }
 
-        const emailList = Object.entries(data).map(([id, email]) => ({
-          id,
-          ...email,
-        }));
+        const emailList = data
+          ? Object.entries(data).map(([id, email]) => ({
+              id,
+              ...email,
+            }))
+          : [];
 
-        // Newest email first
+        // Newest first
         emailList.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
 
-        dispatch({
-          type: "SET_EMAILS",
-          payload: emailList,
-        });
+        /*
+         * Only update React state if something
+         * actually changed.
+         */
+        if (!areEmailsEqual(emailsRef.current, emailList)) {
+          emailsRef.current = emailList;
+
+          dispatch({
+            type: "SET_EMAILS",
+            payload: emailList,
+          });
+        } else if (showLoading) {
+          // First request should stop loading
+          emailsRef.current = emailList;
+
+          dispatch({
+            type: "SET_EMAILS",
+            payload: emailList,
+          });
+        }
       } catch (error) {
+        if (cancelled) {
+          return;
+        }
+
         console.error("Fetch emails error:", error);
 
         dispatch({
@@ -129,10 +165,23 @@ const Home = () => {
       }
     };
 
-    setSelectedEmail(null);
-    fetchEmails();
-  }, [folder, navigate]);
+    // Fetch immediately
+    fetchEmails(true);
 
+    // Then poll every 2 seconds
+    intervalId = setInterval(() => {
+      fetchEmails(false);
+    }, 2000);
+
+    return () => {
+      cancelled = true;
+      clearInterval(intervalId);
+    };
+  }, [folder, navigate]);
+  
+  useEffect(() => {
+  emailsRef.current = [];
+}, [folder]);
   // -------------------------
   // Open email
   // -------------------------
