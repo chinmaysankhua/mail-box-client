@@ -443,3 +443,30 @@
     padding: 20px;
   }
 }
+
+.delete-mail-button {
+  width: 35px;
+  height: 35px;
+
+  flex-shrink: 0;
+
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  border: none;
+  border-radius: 50%;
+
+  background: transparent;
+
+  color: #777777;
+
+  cursor: pointer;
+
+  font-size: 16px;
+}
+
+.delete-mail-button:hover {
+  background: #eeeeee;
+  color: #d93025;
+}

@@ -46,6 +46,12 @@ const emailReducer = (state, action) => {
         ),
       };
 
+    case "DELETE_EMAIL":
+      return {
+        ...state,
+        emails: state.emails.filter((email) => email.id !== action.payload),
+      };
+
     default:
       return state;
   }
@@ -121,6 +127,47 @@ const Home = () => {
   // -------------------------
   // Mark email as read
   // -------------------------
+
+  const handleDeleteEmail = async (email) => {
+    try {
+      const currentUser = auth.currentUser;
+
+      if (!currentUser) {
+        navigate("/login");
+        return;
+      }
+
+      const idToken = await getIdToken(currentUser);
+
+      const response = await fetch(
+        `${DATABASE_URL}/mailboxes/${currentUser.uid}/inbox/${email.id}.json?auth=${idToken}`,
+        {
+          method: "DELETE",
+        },
+      );
+
+      if (!response.ok) {
+        throw new Error("Failed to delete email.");
+      }
+
+      dispatch({
+        type: "DELETE_EMAIL",
+        payload: email.id,
+      });
+
+      // If the deleted mail was currently open
+      if (selectedEmail && selectedEmail.id === email.id) {
+        setSelectedEmail(null);
+      }
+    } catch (error) {
+      console.error("Delete email error:", error);
+
+      dispatch({
+        type: "SET_ERROR",
+        payload: error.message || "Unable to delete email.",
+      });
+    }
+  };
 
   const markEmailAsRead = async (email) => {
     try {
@@ -392,6 +439,17 @@ const Home = () => {
                 {/* Time */}
 
                 <div className="email-time">{formatTime(email.createdAt)}</div>
+                <button
+                  type="button"
+                  className="delete-mail-button"
+                  title="Delete"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    handleDeleteEmail(email);
+                  }}
+                >
+                  <i className="bi bi-trash"></i>
+                </button>
               </div>
             ))}
           </div>
